@@ -281,7 +281,7 @@ static void  update_hardware_info_8994(struct hardware_info *hw_info, const char
     }
 }
 
-static void  update_hardware_info_8996(struct hardware_info *hw_info, const char *snd_card_name)
+static int update_hardware_info_8996(struct hardware_info *hw_info, const char *snd_card_name)
 {
     if (!strcmp(snd_card_name, "msm8996-tasha-fluid-snd-card")) {
         strlcpy(hw_info->type, " fluid", sizeof(hw_info->type));
@@ -303,7 +303,9 @@ static void  update_hardware_info_8996(struct hardware_info *hw_info, const char
         strlcpy(hw_info->dev_extn, "-db", sizeof(hw_info->dev_extn));
     } else {
         ALOGW("%s: Not a 8996 device", __func__);
+	return -ENODEV;
     }
+    return 0;
 }
 
 static void  update_hardware_info_8974(struct hardware_info *hw_info, const char *snd_card_name)
@@ -431,9 +433,10 @@ void *hw_info_init(const char *snd_card_name)
     } else if(strstr(snd_card_name, "msm8994")) {
         ALOGV("8994 - variant soundcard");
         update_hardware_info_8994(hw_info, snd_card_name);
-    } else if(strstr(snd_card_name, "msm8996")) {
-        ALOGV("8996 - variant soundcard");
-        update_hardware_info_8996(hw_info, snd_card_name);
+    } else if (update_hardware_info_8996(hw_info, snd_card_name) < 0) {
+        ALOGE("%s: Unsupported target %s:",__func__, snd_card_name);
+        free(hw_info);
+        hw_info = NULL;
     } else {
         ALOGE("%s: Unsupported target %s:",__func__, snd_card_name);
         free(hw_info);
