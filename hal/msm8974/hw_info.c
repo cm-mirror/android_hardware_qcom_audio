@@ -283,7 +283,13 @@ static void  update_hardware_info_8994(struct hardware_info *hw_info, const char
 
 static int update_hardware_info_8996(struct hardware_info *hw_info, const char *snd_card_name)
 {
-    if (!strcmp(snd_card_name, "msm8996-dtp-snd-card")) {
+    if (!strcmp(snd_card_name, "msm8996-tasha-mtp-snd-card")) {
+        strlcpy(hw_info->type, " mtp", sizeof(hw_info->type));
+        strlcpy(hw_info->name, "msm8996", sizeof(hw_info->name));
+        hw_info->snd_devices = NULL;
+        hw_info->num_snd_devices = 0;
+        strlcpy(hw_info->dev_extn, "", sizeof(hw_info->dev_extn));
+    } else if (!strcmp(snd_card_name, "msm8996-dtp-snd-card")) {
         strlcpy(hw_info->type, " dragon-board", sizeof(hw_info->type));
         strlcpy(hw_info->name, "msm8996", sizeof(hw_info->name));
         hw_info->snd_devices = (snd_device_t *)tasha_DB_variant_devices;
