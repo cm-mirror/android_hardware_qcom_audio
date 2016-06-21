@@ -1970,7 +1970,7 @@ bool platform_check_backends_match(snd_device_t snd_device1, snd_device_t snd_de
     const char * be_itf2 = hw_interface_table[snd_device2];
 
     if (NULL != be_itf1 && NULL != be_itf2) {
-        if (0 != strcmp(be_itf1, be_itf2))
+        if ((NULL == strstr(be_itf2, be_itf1)) && (NULL == strstr(be_itf1, be_itf2)))
             result = false;
     } else if (NULL == be_itf1 && NULL != be_itf2) {
             result = false;
@@ -4226,23 +4226,6 @@ static bool platform_check_codec_backend_cfg(struct audio_device* adev,
             }
         }
     }
-    if (backend_idx != HEADPHONE_44_1_BACKEND) {
-        // 16 bit playbacks are allowed through 16 bit/48 khz backend only for
-        // all non-native streams
-        if (16 == bit_width) {
-            sample_rate = CODEC_BACKEND_DEFAULT_SAMPLE_RATE;
-            ALOGD("%s: resetting sample_rate back to default, "
-                   "backend_idx: %d", __func__, backend_idx);
-        }
-
-        // 24 bit playback on speakers is allowed through 48 khz backend only
-        // bit width re-configured based on platform info
-        if ((24 == bit_width) &&
-            (usecase->stream.out->devices & AUDIO_DEVICE_OUT_SPEAKER)) {
-            bit_width = (uint32_t)platform_get_snd_device_bit_width(SND_DEVICE_OUT_SPEAKER);
-            sample_rate = CODEC_BACKEND_DEFAULT_SAMPLE_RATE;
-        }
-    }
 
     if (backend_idx == HDMI_RX_BACKEND) {
         //Check EDID info for supported samplerate
@@ -4254,6 +4237,21 @@ static bool platform_check_codec_backend_cfg(struct audio_device* adev,
         if (!edid_is_supported_bps(edid_info,bit_width)) {
             //reset to current sample rate
             bit_width = my_data->current_backend_cfg[backend_idx].bit_width;
+        }
+    } else if (backend_idx != HEADPHONE_44_1_BACKEND) {
+        // 16 bit playbacks are allowed through 16 bit/48 khz backend only for
+        // all non-native streams
+        if (16 == bit_width) {
+            sample_rate = CODEC_BACKEND_DEFAULT_SAMPLE_RATE;
+            ALOGD("%s: resetting sample_rate back to default, "
+                   "backend_idx: %d", __func__, backend_idx);
+        }
+        // 24 bit playback on speakers is allowed through 48 khz backend only
+        // bit width re-configured based on platform info
+        if ((24 == bit_width) &&
+            (usecase->stream.out->devices & AUDIO_DEVICE_OUT_SPEAKER)) {
+            bit_width = (uint32_t)platform_get_snd_device_bit_width(SND_DEVICE_OUT_SPEAKER);
+            sample_rate = CODEC_BACKEND_DEFAULT_SAMPLE_RATE;
         }
         // 24 bit native clips must be played at 48Khz for non native backend
         if ((24 == bit_width) && (OUTPUT_SAMPLING_RATE_44100 == sample_rate)) {

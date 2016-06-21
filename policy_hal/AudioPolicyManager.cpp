@@ -517,7 +517,8 @@ bool AudioPolicyManagerCustom::isOffloadSupported(const audio_offload_info_t& of
         const bool allowOffloadStreamingWithVideo = property_get_bool("av.streaming.offload.enable",
                                                                    false /*default value*/);
         if(offloadInfo.has_video && offloadInfo.is_streaming && !allowOffloadStreamingWithVideo) {
-            ALOGW("offload disabled by av.streaming.offload.enable = %s ", propValue );
+            ALOGW("offload disabled by av.streaming.offload.enable = %d",
+                    allowOffloadStreamingWithVideo);
             return false;
         }
 
@@ -659,7 +660,7 @@ void AudioPolicyManagerCustom::setPhoneState(audio_mode_t state)
     /// Opens: can these line be executed after the switch of volume curves???
     // if leaving call state, handle special case of active streams
     // pertaining to sonification strategy see handleIncallSonification()
-    if (isInCall()) {
+    if (isStateInCall(oldState)) {
         ALOGV("setPhoneState() in call state management: new state is %d", state);
         for (size_t j = 0; j < mOutputs.size(); j++) {
             audio_io_handle_t curOutput = mOutputs.keyAt(j);
@@ -671,7 +672,7 @@ void AudioPolicyManagerCustom::setPhoneState(audio_mode_t state)
             }
         }
 
-        // force reevaluating accessibility routing when call starts
+        // force reevaluating accessibility routing when call stops
         mpClientInterface->invalidateStream(AUDIO_STREAM_ACCESSIBILITY);
     }
 
@@ -947,6 +948,9 @@ void AudioPolicyManagerCustom::setPhoneState(audio_mode_t state)
                 handleIncallSonification((audio_stream_type_t)stream, true, true, curOutput);
            }
         }
+
+       // force reevaluating accessibility routing when call starts
+       mpClientInterface->invalidateStream(AUDIO_STREAM_ACCESSIBILITY);
     }
 
     // Flag that ringtone volume must be limited to music volume until we exit MODE_RINGTONE
@@ -1625,15 +1629,21 @@ audio_io_handle_t AudioPolicyManagerCustom::getOutputForDevice(
     // FIXME: We should check the audio session here but we do not have it in this context.
     // This may prevent offloading in rare situations where effects are left active by apps
     // in the background.
-
-    if (((flags & AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD) == 0) &&
-            !mEffects.isNonOffloadableEffectEnabled()) {
-        profile = getProfileForDirectOutput(device,
-                                           samplingRate,
-                                           format,
-                                           channelMask,
-                                           (audio_output_flags_t)flags);
+    //
+    // Supplementary annotation:
+    // For sake of track offload introduced, we need a rollback for both compress offload
+    // and track offload use cases.
+    if ((flags & (AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD|AUDIO_OUTPUT_FLAG_DIRECT_PCM)) &&
+                mEffects.isNonOffloadableEffectEnabled()) {
+        ALOGD("non offloadable effect is enabled, try with non direct output");
+        goto non_direct_output;
     }
+
+    profile = getProfileForDirectOutput(device,
+                                       samplingRate,
+                                       format,
+                                       channelMask,
+                                       (audio_output_flags_t)flags);
 
     if (profile != 0) {
 
@@ -1897,10 +1907,15 @@ status_t AudioPolicyManagerCustom::startInput(audio_io_handle_t input,
             // If the already active input uses AUDIO_SOURCE_HOTWORD then it is closed,
             // otherwise the active input continues and the new input cannot be started.
             sp<AudioInputDescriptor> activeDesc = mInputs.valueFor(activeInput);
-            if (activeDesc->mInputSource == AUDIO_SOURCE_HOTWORD) {
+            if ((activeDesc->mInputSource == AUDIO_SOURCE_HOTWORD) &&
+                    !activeDesc->hasPreemptedSession(session)) {
                 ALOGW("startInput(%d) preempting low-priority input %d", input, activeInput);
-                stopInput(activeInput, activeDesc->mSessions.itemAt(0));
-                releaseInput(activeInput, activeDesc->mSessions.itemAt(0));
+                audio_session_t activeSession = activeDesc->mSessions.itemAt(0);
+                SortedVector<audio_session_t> sessions = activeDesc->getPreemptedSessions();
+                sessions.add(activeSession);
+                inputDesc->setPreemptedSessions(sessions);
+                stopInput(activeInput, activeSession);
+                releaseInput(activeInput, activeSession);
             } else {
                 ALOGE("startInput(%d) failed: other input %d already started", input, activeInput);
                 return INVALID_OPERATION;

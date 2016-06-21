@@ -411,6 +411,7 @@ static const char * device_table[SND_DEVICE_MAX] = {
     [SND_DEVICE_IN_USB_HEADSET_MIC] = "usb-headset-mic",
     [SND_DEVICE_IN_CAPTURE_FM] = "capture-fm",
     [SND_DEVICE_IN_AANC_HANDSET_MIC] = "aanc-handset-mic",
+    [SND_DEVICE_IN_VOICE_FLUENCE_DMIC_AANC] = "aanc-handset-mic",
     [SND_DEVICE_IN_QUAD_MIC] = "quad-mic",
     [SND_DEVICE_IN_HANDSET_STEREO_DMIC] = "handset-stereo-dmic-ef",
     [SND_DEVICE_IN_SPEAKER_STEREO_DMIC] = "speaker-stereo-dmic-ef",
@@ -530,6 +531,7 @@ static int acdb_device_table[SND_DEVICE_MAX] = {
     [SND_DEVICE_IN_USB_HEADSET_MIC] = 44,
     [SND_DEVICE_IN_CAPTURE_FM] = 0,
     [SND_DEVICE_IN_AANC_HANDSET_MIC] = 104,
+    [SND_DEVICE_IN_VOICE_FLUENCE_DMIC_AANC] = 105,
     [SND_DEVICE_IN_QUAD_MIC] = 46,
     [SND_DEVICE_IN_HANDSET_STEREO_DMIC] = 34,
     [SND_DEVICE_IN_SPEAKER_STEREO_DMIC] = 35,
@@ -647,6 +649,7 @@ static struct name_to_index snd_device_name_index[SND_DEVICE_MAX] = {
     {TO_NAME_INDEX(SND_DEVICE_IN_USB_HEADSET_MIC)},
     {TO_NAME_INDEX(SND_DEVICE_IN_CAPTURE_FM)},
     {TO_NAME_INDEX(SND_DEVICE_IN_AANC_HANDSET_MIC)},
+    {TO_NAME_INDEX(SND_DEVICE_IN_VOICE_FLUENCE_DMIC_AANC)},
     {TO_NAME_INDEX(SND_DEVICE_IN_QUAD_MIC)},
     {TO_NAME_INDEX(SND_DEVICE_IN_HANDSET_STEREO_DMIC)},
     {TO_NAME_INDEX(SND_DEVICE_IN_SPEAKER_STEREO_DMIC)},
@@ -698,6 +701,8 @@ static struct name_to_index usecase_name_index[AUDIO_USECASE_MAX] = {
     {TO_NAME_INDEX(USECASE_VOLTE_CALL)},
     {TO_NAME_INDEX(USECASE_QCHAT_CALL)},
     {TO_NAME_INDEX(USECASE_VOWLAN_CALL)},
+    {TO_NAME_INDEX(USECASE_VOICEMMODE1_CALL)},
+    {TO_NAME_INDEX(USECASE_VOICEMMODE2_CALL)},
     {TO_NAME_INDEX(USECASE_INCALL_REC_UPLINK)},
     {TO_NAME_INDEX(USECASE_INCALL_REC_DOWNLINK)},
     {TO_NAME_INDEX(USECASE_INCALL_REC_UPLINK_AND_DOWNLINK)},
@@ -760,8 +765,8 @@ static int msm_device_to_be_id [][NO_COLS] = {
 static int msm_device_to_be_id [][NO_COLS] = {
        {AUDIO_DEVICE_OUT_EARPIECE                       ,       2},
        {AUDIO_DEVICE_OUT_SPEAKER                        ,       2},
-       {AUDIO_DEVICE_OUT_WIRED_HEADSET                  ,       2},
-       {AUDIO_DEVICE_OUT_WIRED_HEADPHONE                ,       2},
+       {AUDIO_DEVICE_OUT_WIRED_HEADSET                  ,       41},
+       {AUDIO_DEVICE_OUT_WIRED_HEADPHONE                ,       41},
        {AUDIO_DEVICE_OUT_BLUETOOTH_SCO                  ,       11},
        {AUDIO_DEVICE_OUT_BLUETOOTH_SCO_HEADSET          ,       11},
        {AUDIO_DEVICE_OUT_BLUETOOTH_SCO_CARKIT           ,       11},
@@ -1065,10 +1070,13 @@ static bool platform_is_i2s_ext_modem(const char *snd_card_name,
     if (!strncmp(snd_card_name, "apq8084-taiko-i2s-mtp-snd-card",
                  sizeof("apq8084-taiko-i2s-mtp-snd-card")) ||
         !strncmp(snd_card_name, "apq8084-taiko-i2s-cdp-snd-card",
-                 sizeof("apq8084-taiko-i2s-cdp-snd-card"))) {
+                 sizeof("apq8084-taiko-i2s-cdp-snd-card")) ||
+        !strncmp(snd_card_name, "apq8096-tasha-i2c-snd-card",
+                 sizeof("apq8096-tasha-i2c-snd-card"))) {
         plat_data->is_i2s_ext_modem = true;
     }
-    ALOGV("%s, is_i2s_ext_modem:%d",__func__, plat_data->is_i2s_ext_modem);
+    ALOGV("%s, is_i2s_ext_modem:%d soundcard name is %s",__func__, 
+           plat_data->is_i2s_ext_modem, snd_card_name);
 
     return plat_data->is_i2s_ext_modem;
 }
@@ -1601,7 +1609,8 @@ acdb_init_fail:
      */
     property_get("ro.board.platform", platform, "");
     property_get("ro.baseband", baseband, "");
-    if (!strncmp("apq8084", platform, sizeof("apq8084")) &&
+    if ((!strncmp("apq8084", platform, sizeof("apq8084")) ||
+        !strncmp("msm8996", platform, sizeof("msm8996"))) &&
         !strncmp("mdm", baseband, (sizeof("mdm")-1))) {
          my_data->csd = open_csd_client(my_data->is_i2s_ext_modem);
     } else {
@@ -1786,7 +1795,7 @@ bool platform_check_backends_match(snd_device_t snd_device1, snd_device_t snd_de
     const char * be_itf2 = hw_interface_table[snd_device2];
 
     if (NULL != be_itf1 && NULL != be_itf2) {
-        if (0 != strcmp(be_itf1, be_itf2))
+        if ((NULL == strstr(be_itf2, be_itf1)) && (NULL == strstr(be_itf1, be_itf2)))
             result = false;
     } else if (NULL == be_itf1 && NULL != be_itf2) {
             result = false;
@@ -2678,7 +2687,12 @@ snd_device_t platform_get_input_snd_device(void *platform, audio_devices_t out_d
                 out_device & AUDIO_DEVICE_OUT_LINE) {
             if (out_device & AUDIO_DEVICE_OUT_EARPIECE &&
                 audio_extn_should_use_handset_anc(channel_count)) {
-                snd_device = SND_DEVICE_IN_AANC_HANDSET_MIC;
+                if(my_data->fluence_type != FLUENCE_NONE) {
+                    snd_device = SND_DEVICE_IN_VOICE_FLUENCE_DMIC_AANC;
+                    adev->acdb_settings |= DMIC_FLAG;
+                } else {
+                    snd_device = SND_DEVICE_IN_AANC_HANDSET_MIC;
+                }
                 adev->acdb_settings |= ANC_FLAG;
             } else if (my_data->fluence_type == FLUENCE_NONE ||
                 my_data->fluence_in_voice_call == false) {
@@ -3907,7 +3921,18 @@ static bool platform_check_codec_backend_cfg(struct audio_device* adev,
         }
     }
 
-    if (backend_idx != HEADPHONE_44_1_BACKEND) {
+    if (backend_idx == HDMI_RX_BACKEND) {
+        //Check EDID info for supported samplerate
+        if (!edid_is_supported_sr(edid_info,sample_rate)) {
+            //reset to current sample rate
+            sample_rate = my_data->current_backend_cfg[backend_idx].sample_rate;
+        }
+        //Check EDID info for supported bit widhth
+        if (!edid_is_supported_bps(edid_info,bit_width)) {
+            //reset to current sample rate
+            bit_width = my_data->current_backend_cfg[backend_idx].bit_width;
+        }
+    } else if (backend_idx != HEADPHONE_44_1_BACKEND) {
         // 16 bit playbacks are allowed through 16 bit/48 khz backend only for
         // all non-native streams
         if (16 == bit_width) {
@@ -3922,24 +3947,12 @@ static bool platform_check_codec_backend_cfg(struct audio_device* adev,
             bit_width = (uint32_t)platform_get_snd_device_bit_width(SND_DEVICE_OUT_SPEAKER);
             sample_rate = CODEC_BACKEND_DEFAULT_SAMPLE_RATE;
         }
-    }
-
-    if (backend_idx == HDMI_RX_BACKEND) {
-        //Check EDID info for supported samplerate
-        if (!edid_is_supported_sr(edid_info,sample_rate)) {
-            //reset to current sample rate
-            sample_rate = my_data->current_backend_cfg[backend_idx].sample_rate;
-        }
-        //Check EDID info for supported bit widhth
-        if (!edid_is_supported_bps(edid_info,bit_width)) {
-            //reset to current sample rate
-            bit_width = my_data->current_backend_cfg[backend_idx].bit_width;
-        }
         // 24 bit native clips must be played at 48Khz for non native backend
         if ((24 == bit_width) && (OUTPUT_SAMPLING_RATE_44100 == sample_rate)) {
             sample_rate = CODEC_BACKEND_DEFAULT_SAMPLE_RATE;
         }
     }
+
     ALOGI("%s Codec selected backend: %d updated bit width: %d and sample rate: %d",
                __func__, backend_idx, bit_width, sample_rate);
     // Force routing if the expected bitwdith or samplerate
@@ -4606,6 +4619,17 @@ done:
 int platform_set_snd_device_name(snd_device_t device, const char *name)
 {
     int ret = 0;
+
+    if ((device < SND_DEVICE_MIN) || (device >= SND_DEVICE_MAX)) {
+        ALOGE("%s:: Invalid snd_device = %d", __func__, device);
+        ret = -EINVAL;
+        goto done;
+    }
+
+    device_table[device] = strdup(name);
+done:
+    return ret;
+}
 
     if ((device < SND_DEVICE_MIN) || (device >= SND_DEVICE_MAX)) {
         ALOGE("%s:: Invalid snd_device = %d", __func__, device);

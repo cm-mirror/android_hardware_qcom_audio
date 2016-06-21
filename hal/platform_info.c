@@ -464,6 +464,7 @@ static void start_tag(void *userdata __unused, const XML_Char *tag_name,
         if ((section != ACDB) && (section != BACKEND_NAME) && (section != BITWIDTH) &&
             (section != INTERFACE_NAME) && (section != TZ_NAME) && (section != DEVICE_NAME)) {
             ALOGE("device tag only supported for acdb/backend names/bitwitdh/interface/tz names");
+            ALOGE("device tag only supported for acdb/backend names/bitwitdh/interface/tz/device names");
             return;
         }
 
